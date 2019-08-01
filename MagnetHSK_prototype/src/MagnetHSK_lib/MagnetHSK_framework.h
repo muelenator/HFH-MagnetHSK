@@ -5,7 +5,7 @@
 
 #pragma once
 
-#define NUM_LOCAL_CONTROLS 12
+#define NUM_LOCAL_CONTROLS 25
 
 #include <Arduino.h>
 #include <driverlib/sysctl.h>
@@ -23,6 +23,8 @@ const int thermalPin = 38;
 
 // extern setAutoPriorityPeriods();
 extern void enterTestMode(uint8_t *data, uint8_t len);
+extern void setCommandPriority(housekeeping_prio_t * prio);
+
 
 extern uint8_t localControlPriorities[NUM_LOCAL_CONTROLS];
 

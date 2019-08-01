@@ -100,7 +100,5 @@ void fillChecksum(uint8_t* p);
 /* Sums packet to make sure its sum is 0 */
 bool verifyChecksum(uint8_t * p);
 
-void fillBuffer(uint8_t * respData, uint8_t * fillData, uint8_t typeLength);
-
 /* Find address in an array of addresses */
 uint8_t * findMe(uint8_t * first, uint8_t * last, uint8_t address);

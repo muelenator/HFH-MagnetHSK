@@ -15,6 +15,7 @@
 
 // extern setAutoPriorityPeriods();
 extern void enterTestMode(uint8_t *data, uint8_t len);
+extern void setCommandPriority(housekeeping_prio_t * prio);
 
 extern uint8_t addressList[7][254];
 extern uint8_t localControlPriorities[NUM_LOCAL_CONTROLS];

@@ -62,14 +62,6 @@ bool verifyChecksum(uint8_t* p)
 	else return true;
 }
 
-void fillBuffer(uint8_t * respData, uint8_t * fillData, uint8_t typeLength)
-{
-	for (int i = 0; i < typeLength; i++)
-	{
-		*(respData + i) = *fillData;
-		fillData = fillData + 1;
-	}
-}
 /* Function flow:
  * --Checks if a device address is inside a given array of addresses
  * --If the device is known (within the list), function returns its location

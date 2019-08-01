@@ -11,8 +11,7 @@
 int handleLocalWrite(uint8_t localCommand, uint8_t *data, uint8_t len) {
   switch (localCommand) {
   case eSetPriority: {
-    housekeeping_prio_t *prioHdr = (housekeeping_prio_t *)data;
-    localControlPriorities[prioHdr->command] = prioHdr->prio_type;
+    setCommandPriority((housekeeping_prio_t *) data);
     return 0;
   }
   case eTestMode: {
@@ -47,14 +46,9 @@ int handleLocalRead(uint8_t localCommand, uint8_t *buffer) {
   case ePingPong: {
     return 0;
   }
-  case eSetPriority: {
-    *buffer = localCommand;
-    *(buffer + 1) = localControlPriorities[localCommand];
-    return sizeof(housekeeping_prio_t);
-  }
   case eIntSensorRead: {
     uint32_t TempRead = analogRead(TEMPSENSOR);
-    fillBuffer(buffer, (uint8_t *)&TempRead, sizeof(TempRead));
+    memcpy(buffer, (uint8_t *)&TempRead, sizeof(TempRead));
     return sizeof(TempRead);
   }
   case eMapDevices: {

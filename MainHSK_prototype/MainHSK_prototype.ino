@@ -252,26 +252,6 @@ int handleLocalCommand(housekeeping_hdr_t *hdr, uint8_t *data) {
   return 0;
 }
 
-void enterTestMode(uint8_t *data, uint8_t len) {
-  if (len == 2) {
-    housekeeping_hdr_t *respHdr = (housekeeping_hdr_t *)outgoingPacket;
-    uint8_t *respData = outgoingPacket + hdr_size;
-
-    respHdr->cmd = eTestMode;
-    respHdr->len = 2;
-
-    uint16_t numTestPackets = (uint16_t) * (data + 1) << 8;
-    numTestPackets |= *(data);
-
-    while (numTestPackets) {
-      fillBuffer(respData, (uint8_t *)&numTestPackets, sizeof(numTestPackets));
-      fillChecksum(outgoingPacket);
-      downStream1.send(outgoingPacket, hdr_size + respHdr->len + 1);
-      numTestPackets--;
-    }
-  }
-}
-
 /******************************************************************************
  * Packet checking functions
  *****************************************************************************/
@@ -386,7 +366,8 @@ void badPacketReceived(PacketSerial *sender) {
 
 void buildError(int error) {
   housekeeping_hdr_t *respHdr = (housekeeping_hdr_t *)outgoingPacket;
-  housekeeping_err_t *err = (housekeeping_err_t *)outgoingPacket + hdr_size;
+  housekeeping_err_t *err = (housekeeping_err_t *) (outgoingPacket + hdr_size);
+  respHdr->dst = eSFC;
   respHdr->cmd = eError;
   respHdr->len = 4;
   err->src = hdr_in->src;
@@ -394,3 +375,47 @@ void buildError(int error) {
   err->cmd = hdr_in->cmd;
   err->error = error;
 }
+
+/******************************************************************************
+ * System functions for all devices
+ *****************************************************************************/
+
+ void enterTestMode(uint8_t *data, uint8_t len) {
+   if (len == 2) {
+     housekeeping_hdr_t *respHdr = (housekeeping_hdr_t *)outgoingPacket;
+     uint8_t *respData = outgoingPacket + hdr_size;
+
+     respHdr->dst = eSFC;
+     respHdr->src = myID;
+     respHdr->cmd = eTestMode;
+     respHdr->len = 2;
+
+     uint16_t numTestPackets = (uint16_t) * (data + 1) << 8;
+     numTestPackets |= *(data);
+
+     while (numTestPackets) {
+       memcpy(respData, (uint8_t *)&numTestPackets, sizeof(numTestPackets));
+       fillChecksum(outgoingPacket);
+       downStream1.send(outgoingPacket, hdr_size + respHdr->len + 1);
+       numTestPackets--;
+     }
+   }
+ }
+
+ void setCommandPriority(housekeeping_prio_t * prio)
+ {
+     localControlPriorities[prio->command - 2] = prio->prio_type;
+
+     housekeeping_hdr_t * hdr = (housekeeping_hdr_t *) outgoingPacket;
+     hdr->dst = eSFC;
+     hdr->src = myID;
+     hdr->cmd = eSetPriority;
+     hdr->len = 2;
+
+     housekeeping_prio_t * RespPrio = (housekeeping_prio_t *) (outgoingPacket + hdr_size);
+     RespPrio->command = prio->command;
+     RespPrio->prio_type = prio->prio_type;
+
+     fillChecksum(outgoingPacket);
+     downStream1.send(outgoingPacket, hdr_size + hdr->len + 1);
+ }
