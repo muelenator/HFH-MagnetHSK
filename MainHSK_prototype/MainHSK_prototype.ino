@@ -9,6 +9,7 @@
  * --PACKETMARKER is defined in Cobs_encoding.h
  * --MAX_PACKET_LENGTH is defined in PacketSerial
  * --NUM_LOCAL_CONTROLS is defined in MainHSK_framework.h
+ * --FIRST_LOCAL_COMMAND is defined in MainHSK_framework.h
  * --BAUD rates are defined here
  *
  */
@@ -158,14 +159,14 @@ void checkHdr(const void *sender, const uint8_t *buffer, size_t len) {
 
       /* If a send priority command is received */
       if ((int)hdr_in->cmd <= 253 && (int)hdr_in->cmd >= 250) {
-        handlePriority(hdr_in->src, hdr_in->cmd - 250);
+        handlePriority(hdr_in->cmd - 250);
       }
       /* Otherwise just execute the command */
       else {
         if (handleLocalCommand(hdr_in, (uint8_t *)hdr_in + hdr_size) < 0) {
-            buildError(EBADCOMMAND);
-            fillChecksum((uint8_t *)outgoingPacket);
-            downStream1.send(outgoingPacket, hdr_size + 4 + 1);
+          buildError(EBADCOMMAND);
+          fillChecksum((uint8_t *)outgoingPacket);
+          downStream1.send(outgoingPacket, hdr_size + 4 + 1);
         }
       }
     }
@@ -191,36 +192,17 @@ void checkHdr(const void *sender, const uint8_t *buffer, size_t len) {
 }
 
 // got a priority request from destination dst
-int handlePriority(uint8_t src, uint8_t priority) {
-  housekeeping_hdr_t *respHdr = (housekeeping_hdr_t *)outgoingPacket;
-
-  uint8_t *respData = outgoingPacket + hdr_size;
-
-  uint8_t *p;
-
-  int retval;
-
-  respHdr->src = myID;
-  respHdr->dst = src;
-
-  // priority == 0 when this function is called is code for "eSendAll"
-  // otherwise priority=1,2,3 and that maps to eSendLowPriority+priority
-  if (priority) {
-    respHdr->cmd = eSendLowPriority + priority;
-  } else {
-    respHdr->cmd = eSendAll;
-    p = respData;
-  }
-
-  for (int i = 0; i < NUM_LOCAL_CONTROLS; i++) {
+int handlePriority(uint8_t priority) {
+  for (int i = FIRST_LOCAL_COMMAND; i < NUM_LOCAL_CONTROLS; i++) {
+    hdr_in->cmd = i;
     if (localControlPriorities[i] == priority || !priority) {
-      respHdr->len += handleLocalRead(i, p);
-      p = respData + respHdr->len;
+      if (handleLocalCommand(hdr_in, (uint8_t *)hdr_in + hdr_size) < 0) {
+        buildError(EBADCOMMAND);
+        fillChecksum((uint8_t *)outgoingPacket);
+        downStream1.send(outgoingPacket, hdr_size + 4 + 1);
+      }
     }
   }
-
-  fillChecksum(outgoingPacket);
-  downStream1.send(outgoingPacket, respHdr->len + hdr_size + 1);
 }
 
 int handleLocalCommand(housekeeping_hdr_t *hdr, uint8_t *data) {
@@ -262,8 +244,8 @@ int handleLocalCommand(housekeeping_hdr_t *hdr, uint8_t *data) {
  * Function params:
  * buffer:		The decoded packet received
  * len:			Size (in bytes) of the incoming packet above
- * sender:		PacketSerial instance (serial line) where the message was
- * received
+ * sender:		PacketSerial instance (serial line) where the message
+ * was received
  *
  */
 void forwardDown(const uint8_t *buffer, size_t len, const void *sender) {
@@ -296,8 +278,8 @@ void forwardUp(const uint8_t *buffer, size_t len) {
  * --Executed every time a packet is received from downStream
  *
  * Function params:
- * sender:		PacketSerial instance (serial line) where the message was
- * received
+ * sender:		PacketSerial instance (serial line) where the message
+ * was received
  *
  */
 void checkDownBoundDst(const void *sender) {
@@ -366,7 +348,7 @@ void badPacketReceived(PacketSerial *sender) {
 
 void buildError(int error) {
   housekeeping_hdr_t *respHdr = (housekeeping_hdr_t *)outgoingPacket;
-  housekeeping_err_t *err = (housekeeping_err_t *) (outgoingPacket + hdr_size);
+  housekeeping_err_t *err = (housekeeping_err_t *)(outgoingPacket + hdr_size);
   respHdr->dst = eSFC;
   respHdr->cmd = eError;
   respHdr->len = 4;
@@ -380,42 +362,42 @@ void buildError(int error) {
  * System functions for all devices
  *****************************************************************************/
 
- void enterTestMode(uint8_t *data, uint8_t len) {
-   if (len == 2) {
-     housekeeping_hdr_t *respHdr = (housekeeping_hdr_t *)outgoingPacket;
-     uint8_t *respData = outgoingPacket + hdr_size;
+void enterTestMode(uint8_t *data, uint8_t len) {
+  if (len == 2) {
+    housekeeping_hdr_t *respHdr = (housekeeping_hdr_t *)outgoingPacket;
+    uint8_t *respData = outgoingPacket + hdr_size;
 
-     respHdr->dst = eSFC;
-     respHdr->src = myID;
-     respHdr->cmd = eTestMode;
-     respHdr->len = 2;
+    respHdr->dst = eSFC;
+    respHdr->src = myID;
+    respHdr->cmd = eTestMode;
+    respHdr->len = 2;
 
-     uint16_t numTestPackets = (uint16_t) * (data + 1) << 8;
-     numTestPackets |= *(data);
+    uint16_t numTestPackets = (uint16_t) * (data + 1) << 8;
+    numTestPackets |= *(data);
 
-     while (numTestPackets) {
-       memcpy(respData, (uint8_t *)&numTestPackets, sizeof(numTestPackets));
-       fillChecksum(outgoingPacket);
-       downStream1.send(outgoingPacket, hdr_size + respHdr->len + 1);
-       numTestPackets--;
-     }
-   }
- }
+    while (numTestPackets) {
+      memcpy(respData, (uint8_t *)&numTestPackets, sizeof(numTestPackets));
+      fillChecksum(outgoingPacket);
+      downStream1.send(outgoingPacket, hdr_size + respHdr->len + 1);
+      numTestPackets--;
+    }
+  }
+}
 
- void setCommandPriority(housekeeping_prio_t * prio)
- {
-     localControlPriorities[prio->command - 2] = prio->prio_type;
+void setCommandPriority(housekeeping_prio_t *prio) {
+  localControlPriorities[prio->command] = prio->prio_type;
 
-     housekeeping_hdr_t * hdr = (housekeeping_hdr_t *) outgoingPacket;
-     hdr->dst = eSFC;
-     hdr->src = myID;
-     hdr->cmd = eSetPriority;
-     hdr->len = 2;
+  housekeeping_hdr_t *hdr = (housekeeping_hdr_t *)outgoingPacket;
+  hdr->dst = eSFC;
+  hdr->src = myID;
+  hdr->cmd = eSetPriority;
+  hdr->len = sizeof(housekeeping_prio_t);
 
-     housekeeping_prio_t * RespPrio = (housekeeping_prio_t *) (outgoingPacket + hdr_size);
-     RespPrio->command = prio->command;
-     RespPrio->prio_type = prio->prio_type;
+  housekeeping_prio_t *RespPrio =
+      (housekeeping_prio_t *)(outgoingPacket + hdr_size);
+  RespPrio->command = prio->command;
+  RespPrio->prio_type = prio->prio_type;
 
-     fillChecksum(outgoingPacket);
-     downStream1.send(outgoingPacket, hdr_size + hdr->len + 1);
- }
+  fillChecksum(outgoingPacket);
+  downStream1.send(outgoingPacket, hdr_size + hdr->len + 1);
+}

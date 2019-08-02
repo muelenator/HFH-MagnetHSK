@@ -11,7 +11,7 @@
 int handleLocalWrite(uint8_t localCommand, uint8_t *data, uint8_t len) {
   switch (localCommand) {
   case eSetPriority: {
-    setCommandPriority((housekeeping_prio_t *) data);
+    setCommandPriority((housekeeping_prio_t *)data);
     return 0;
   }
   case eTestMode: {
@@ -28,7 +28,7 @@ int handleLocalWrite(uint8_t localCommand, uint8_t *data, uint8_t len) {
   // 	return -EBADLEN;
   // }
   default:
-    return -EBADCOMMAND;
+    return EBADCOMMAND;
   }
 }
 
@@ -71,7 +71,7 @@ int handleLocalRead(uint8_t localCommand, uint8_t *buffer) {
     // }
 
   default:
-    return -EBADCOMMAND;
+    return EBADCOMMAND;
   }
 }
 
