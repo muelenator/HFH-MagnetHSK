@@ -23,5 +23,7 @@ typedef enum MainHSK_cmd {
   // 2-248 are board-specific: these are test commands
   eIntSensorRead = 2,
   eMapDevices = 3,
-  eHeaterControl = 4
+  eHeaterControl = 4,
+  ePacketCount = 5,
+  eRandomTest = 6
 } MainHSK_cmd;

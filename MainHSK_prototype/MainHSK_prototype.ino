@@ -37,6 +37,8 @@ size_t hdr_size = sizeof(housekeeping_hdr_t); // size of the header
 
 uint8_t addressList[7][254] = {0}; // List of all upstream devices
 
+uint16_t currentPacketCount = 0; // How many packets have been sent
+
 uint8_t localControlPriorities[NUM_LOCAL_CONTROLS] = {0}; // Priority settings
 
 housekeeping_hdr_t *hdr_in; // Pointer to incoming header
@@ -189,6 +191,7 @@ void checkHdr(const void *sender, const uint8_t *buffer, size_t len) {
     else
       forwardDown(buffer, len, sender);
   }
+  currentPacketCount++;
 }
 
 // got a priority request from destination dst
@@ -344,6 +347,7 @@ void badPacketReceived(PacketSerial *sender) {
 
   fillChecksum((uint8_t *)outgoingPacket);
   downStream1.send(outgoingPacket, hdr_size + 4 + 1);
+  // currentPacketCount++;
 }
 
 void buildError(int error) {

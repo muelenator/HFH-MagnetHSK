@@ -9,6 +9,7 @@
 #define FIRST_LOCAL_COMMAND 2
 
 #include <Arduino.h>
+#include <PacketSerial.h>
 #include <driverlib/sysctl.h>
 
 #include "MainHSK_protocol.h"
@@ -20,6 +21,7 @@ extern void setCommandPriority(housekeeping_prio_t *prio);
 
 extern uint8_t addressList[7][254];
 extern uint8_t localControlPriorities[NUM_LOCAL_CONTROLS];
+extern uint16_t currentPacketCount;
 
 int handleLocalWrite(uint8_t localCommand, uint8_t *data, uint8_t len);
 int handleLocalRead(uint8_t localCommand, uint8_t *buffer);

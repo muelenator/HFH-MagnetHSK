@@ -13,6 +13,81 @@ int handleLocalWrite(uint8_t localCommand, uint8_t *data, uint8_t len) {
     enterTestMode(data, len);
     return 2;
   }
+  case eResistanceCh3: {
+    return EBADLEN;
+  }
+  case eResistanceCh6: {
+    return EBADLEN;
+  }
+  case eResistanceCh9: {
+    return EBADLEN;
+  }
+  case eResistanceCh12: {
+    return EBADLEN;
+  }
+  case eResistanceCh16: {
+    return EBADLEN;
+  }
+  case eResistanceCh20: {
+    return EBADLEN;
+  }
+  case eTempCh3: {
+    return EBADLEN;
+  }
+  case eTempCh6: {
+    return EBADLEN;
+  }
+  case eTempCh9: {
+    return EBADLEN;
+  }
+  case eTempCh12: {
+    return EBADLEN;
+  }
+  case eTempCh16: {
+    return EBADLEN;
+  }
+  case eTempCh20: {
+    return EBADLEN;
+  }
+  case eFlow1: {
+    return EBADLEN;
+  }
+  case eFlow2: {
+    return EBADLEN;
+  }
+  case eTempProbe1: {
+    return EBADLEN;
+  }
+  case eTempProbe2: {
+    return EBADLEN;
+  }
+  case eTempProbe3: {
+    return EBADLEN;
+  }
+  case eTempProbe4: {
+    return EBADLEN;
+  }
+  case eTempProbe5: {
+    return EBADLEN;
+  }
+  case eTempProbe6: {
+    return EBADLEN;
+  }
+  case eTempProbe7: {
+    return EBADLEN;
+  }
+  case eTempProbe8: {
+    return EBADLEN;
+  }
+  case eTempProbe9: {
+    return EBADLEN;
+  }
+  case eTempProbe10: {
+    return EBADLEN;
+  }
+  case ePressure: {
+    return EBADLEN;
+  }
   default:
     return EBADCOMMAND;
   }

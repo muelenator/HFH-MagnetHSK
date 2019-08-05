@@ -23,10 +23,12 @@ int handleLocalWrite(uint8_t localCommand, uint8_t *data, uint8_t len) {
   // 	got an autoPriorityPeriod command
   // 	return setAutoPriorityPeriods(data, len);
   // }
-  // case ePacketCount:
-  // {
-  // 	return -EBADLEN;
-  // }
+  case ePacketCount: {
+    return EBADLEN;
+  }
+  case eRandomTest: {
+    return EBADLEN;
+  }
   default:
     return EBADCOMMAND;
   }
@@ -58,17 +60,25 @@ int handleLocalRead(uint8_t localCommand, uint8_t *buffer) {
     SysCtlReset();
     return 0;
   }
-    // case eAutoPriorityPeriod:
-    // {
-    // 	memcpy(buffer, (uint8_t *) currentAutoPriorityPeriods,
-    // sizeof(currentAutoPriorityPeriods)); 	return
-    // sizeof(currentAutoPriorityPeriods);
-    // }
-    // case ePacketCount:
-    // {
-    // 	memcpy(buffer, (uint8_t *) currentPacketCount,
-    // sizeof(currentPacketCount)); 	return sizeof(currentPacketCount);
-    // }
+  // case eAutoPriorityPeriod:
+  // {
+  // 	memcpy(buffer, (uint8_t *) currentAutoPriorityPeriods,
+  // sizeof(currentAutoPriorityPeriods)); 	return
+  // sizeof(currentAutoPriorityPeriods);
+  // }
+  case ePacketCount: {
+    memcpy(buffer, (uint8_t *)&currentPacketCount, sizeof(currentPacketCount));
+    return sizeof(currentPacketCount);
+  }
+  case eRandomTest: {
+    int numBytes = rand() % MAX_PACKET_LENGTH * (1 - 1 / 254);
+    uint8_t Bytes[numBytes];
+    for (int i = 0; i < numBytes; i++) {
+      Bytes[i] = rand();
+    }
+    memcpy(buffer, (uint8_t *)&Bytes, numBytes);
+    return numBytes;
+  }
 
   default:
     return EBADCOMMAND;
