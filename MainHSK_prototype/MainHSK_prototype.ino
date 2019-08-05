@@ -161,7 +161,7 @@ void checkHdr(const void *sender, const uint8_t *buffer, size_t len) {
 
       /* If a send priority command is received */
       if ((int)hdr_in->cmd <= 253 && (int)hdr_in->cmd >= 250) {
-        handlePriority(hdr_in->cmd - 250);
+        handlePriority((hdr_in->cmd - 249) % 4);
       }
       /* Otherwise just execute the command */
       else {
