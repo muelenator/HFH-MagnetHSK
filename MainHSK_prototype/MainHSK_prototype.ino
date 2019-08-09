@@ -8,8 +8,9 @@
  * CONSTANTS:
  * --PACKETMARKER is defined in Cobs_encoding.h
  * --MAX_PACKET_LENGTH is defined in PacketSerial
- * --NUM_LOCAL_CONTROLS is defined in MainHSK_framework.h
- * --FIRST_LOCAL_COMMAND is defined in MainHSK_framework.h
+ * --NUM_LOCAL_CONTROLS is defined here
+ * --FIRST_LOCAL_COMMAND is defined here
+ * --TEST_MODE_PERIOD is defined here
  * --BAUD rates are defined here
  *
  */
@@ -17,16 +18,20 @@
 /* Everyone uses these */
 #include <Core_protocol.h>
 #include <PacketSerial.h>
+#include <driverlib/sysctl.h>
 
 /* These are device specific */
-#include "src/MainHSK_lib/MainHSK_framework.h"
 #include "src/MainHSK_lib/MainHSK_protocol.h"
 
 /*******************************************************************************
  * Defines
  *******************************************************************************/
-#define DOWNBAUD 1292000
-#define UPBAUD 115200
+#define TEST_MODE_PERIOD 100  // period in milliseconds between testmode packets being sent
+#define NUM_LOCAL_CONTROLS 12 // how many commands total are local to the board
+#define FIRST_LOCAL_COMMAND 2 // value of hdr->cmd that is the first command local to the board
+
+#define DOWNBAUD 1292000 // Baudrate to the SFC
+#define UPBAUD 115200    // Baudrate to upsteam devices
 
 /* Name of this device */
 housekeeping_id myID = eMainHsk;
@@ -41,7 +46,14 @@ uint16_t currentPacketCount = 0; // How many packets have been sent
 
 uint8_t localControlPriorities[NUM_LOCAL_CONTROLS] = {0}; // Priority settings
 
+autoPriorityPeriods_t currentAutoPriorityPeriods = {0}; // Current auto-priority settings
+
 housekeeping_hdr_t *hdr_in; // Pointer to incoming header
+
+/* Timing variables for autopriority functions */
+uint32_t nextLowPacket = 0;
+uint32_t nextMedPacket = 0;
+uint32_t nextHighPacket = 0;
 
 /* Declare instances of PacketSerial to set up the serial lines */
 PacketSerial downStream1;
@@ -59,7 +71,8 @@ PacketSerial *serialDevices[7] = {&upStream1, &upStream2, &upStream3,
 /*******************************************************************************
  * Setup
  *******************************************************************************/
-void setup() {
+void setup()
+{
   Serial.begin(DOWNBAUD);
   downStream1.setStream(&Serial);
   downStream1.setPacketHandler(&checkHdr);
@@ -95,7 +108,8 @@ void setup() {
 /*******************************************************************************
  * Main program
  ******************************************************************************/
-void loop() {
+void loop()
+{
   /* Continuously read in one byte at a time until a packet is received */
   if (downStream1.update() != 0)
     badPacketReceived(&downStream1);
@@ -113,43 +127,32 @@ void loop() {
     badPacketReceived(&upStream6);
   if (upStream7.update() != 0)
     badPacketReceived(&upStream7);
+
+  checkAutoPriority();
 }
 
 /*******************************************************************************
- * Packet handling functions
+ * Packet handling functions--Device specific
  *******************************************************************************/
-/* To be executed when a packet is received
- *
- * Function flow:
- * --Creates default header & error header values that most board functions will
- * use
- * --Checks if the message was intended for this device
- *      --If so, check if it was a send priority command
- *          --If not, execute the command by calling CommandCenter().
- *            priority request,
- *      --If not, forward on the packet based on where it came from
- *
- * Function params:
- * sender:		PacketSerial instance where the message came from
- * buffer:		The decoded packet
- * len:			The size (in bytes) of the decoded packet
- *
- *
- * */
-void checkHdr(const void *sender, const uint8_t *buffer, size_t len) {
+void checkHdr(const void *sender, const uint8_t *buffer, size_t len)
+{
   hdr_in = (housekeeping_hdr_t *)buffer;
   /* Check if the message is for this device. If so, check & execute command */
-  if (hdr_in->dst == myID || hdr_in->dst == eBroadcast) {
+  if (hdr_in->dst == myID || hdr_in->dst == eBroadcast)
+  {
     /* Check for data corruption */
-    if (verifyChecksum((uint8_t *)buffer)) {
+    if (verifyChecksum((uint8_t *)buffer))
+    {
       /* Check for bad length	*/
-      if (hdr_in->len != len - 4 - 1) {
+      if (hdr_in->len != len - 4 - 1)
+      {
         badPacketReceived((PacketSerial *)sender);
         return;
       }
 
       /* Forward downstream if eBroadcast */
-      if (hdr_in->dst == eBroadcast) {
+      if (hdr_in->dst == eBroadcast)
+      {
         upStream1.send(buffer, len);
         upStream2.send(buffer, len);
         upStream3.send(buffer, len);
@@ -160,21 +163,16 @@ void checkHdr(const void *sender, const uint8_t *buffer, size_t len) {
       }
 
       /* If a send priority command is received */
-      if ((int)hdr_in->cmd <= 253 && (int)hdr_in->cmd >= 250) {
-        handlePriority((hdr_in->cmd - 249) % 4);
-      }
+      if ((int)hdr_in->cmd <= 253 && (int)hdr_in->cmd >= 250)
+        handlePriority((hdr_in->cmd - 249) % 4); // passes the priority #
       /* Otherwise just execute the command */
-      else {
-        if (handleLocalCommand(hdr_in, (uint8_t *)hdr_in + hdr_size) < 0) {
-          buildError(EBADCOMMAND);
-          fillChecksum((uint8_t *)outgoingPacket);
-          downStream1.send(outgoingPacket, hdr_size + 4 + 1);
-        }
-      }
+      else
+        handleLocalCommand(hdr_in, (uint8_t *)hdr_in + hdr_size);
     }
 
     /* If the checksum didn't match, throw a bad args error */
-    else {
+    else
+    {
       buildError(EBADARGS);
       fillChecksum((uint8_t *)outgoingPacket);
       downStream1.send(outgoingPacket, hdr_size + 4 + 1);
@@ -182,83 +180,271 @@ void checkHdr(const void *sender, const uint8_t *buffer, size_t len) {
   }
 
   /* If the message wasn't meant for this device pass it along */
-  else {
-    if (sender == &downStream1) {
-      /* Send upstream away from SFC */
-      forwardUp(buffer, len);
-    }
-    /* Send  downstream towards SFC */
+  else
+  {
+    if (sender == &downStream1)
+      forwardUp(buffer, len); // Send upstream away from SFC
     else
-      forwardDown(buffer, len, sender);
+      forwardDown(buffer, len, sender); // Send downstream towards SFC
   }
+}
+
+// Fn to handle a local command write.
+// This gets called when a local command is received
+// with data (len != 0).
+int handleLocalWrite(uint8_t localCommand, uint8_t *data, uint8_t len)
+{
+  switch (localCommand)
+  {
+  case eSetPriority:
+  {
+    housekeeping_prio_t *in_prio = (housekeeping_prio_t *)data;
+    housekeeping_prio_t *out_prio = (housekeeping_prio_t *)(outgoingPacket + hdr_size);
+    localControlPriorities[in_prio->command] = in_prio->prio_type;
+
+    memcpy(out_prio, (uint8_t *)in_prio, sizeof(housekeeping_prio_t));
+    return sizeof(housekeeping_prio_t);
+  }
+  case eTestMode:
+  {
+    return handleTestMode(data, len);
+  }
+  case ePacketCount:
+  {
+    return EBADLEN;
+  }
+  case eRandomTest:
+  {
+    return EBADLEN;
+  }
+  case eAutoPriorityPeriod:
+  {
+    memcpy((uint16_t *)&currentAutoPriorityPeriods, data, len);
+    return 0;
+  }
+  case eReset:
+  {
+    return EBADLEN;
+  }
+  default:
+    return EBADCOMMAND;
+  }
+}
+
+// Fn to handle a local command read.
+// This gets called when a local command is received
+// with no data (len == 0)
+// buffer contains the pointer to where the data
+// will be written.
+// int returns the number of bytes that were copied into
+// the buffer, or -EBADCOMMAND if there's no command there
+int handleLocalRead(uint8_t localCommand, uint8_t *buffer)
+{
+  switch (localCommand)
+  {
+  case ePingPong:
+  {
+    return 0;
+  }
+  case eSetPriority:
+  {
+    return EBADLEN;
+  }
+  case eIntSensorRead:
+  {
+    uint32_t TempRead = analogRead(TEMPSENSOR);
+    memcpy(buffer, (uint8_t *)&TempRead, sizeof(TempRead));
+    return sizeof(TempRead);
+  }
+  case eMapDevices:
+  {
+    return whatToDoIfMap(buffer);
+  }
+  case ePacketCount:
+  {
+    memcpy(buffer, (uint8_t *)&currentPacketCount, sizeof(currentPacketCount));
+    return sizeof(currentPacketCount);
+  }
+  case eRandomTest:
+  {
+    int numBytes = rand() % MAX_PACKET_LENGTH * (1 - 1 / 254) - 2;
+    for (int i = 0; i < numBytes; i++)
+      *(buffer + i) = rand();
+    return numBytes;
+  }
+  case eAutoPriorityPeriod:
+  {
+    memcpy(buffer, (uint8_t *)&currentAutoPriorityPeriods, sizeof(autoPriorityPeriods_t));
+    return sizeof(autoPriorityPeriods_t);
+  }
+  case eReset:
+  {
+    SysCtlReset();
+    return 0;
+  }
+  default:
+    return EBADCOMMAND;
+  }
+}
+
+/******************************************************************************
+ * System functions for all devices
+ *****************************************************************************/
+void handleLocalCommand(housekeeping_hdr_t *hdr, uint8_t *data)
+{
+  int retval;
+
+  housekeeping_hdr_t *respHdr = (housekeeping_hdr_t *)outgoingPacket;
+  uint8_t *respData = outgoingPacket + hdr_size;
+
+  if (hdr->len) // local write
+    retval = handleLocalWrite(hdr->cmd, data, hdr->len);
+  else // local read. by definition these always go downstream.
+    retval = handleLocalRead(hdr->cmd, respData);
+
+  if (retval >= 0)
+  {
+    respHdr->src = myID;
+    respHdr->dst = hdr->src;
+    respHdr->cmd = hdr->cmd;
+    respHdr->len = retval;
+  }
+  else
+    buildError(retval);
+
+  fillChecksum(outgoingPacket);
+  downStream1.send(outgoingPacket, hdr_size + respHdr->len + 1);
+
   currentPacketCount++;
 }
 
-// got a priority request from destination dst
-int handlePriority(uint8_t priority) {
-  for (int i = FIRST_LOCAL_COMMAND; i < NUM_LOCAL_CONTROLS; i++) {
-    hdr_in->cmd = i;
-    if (localControlPriorities[i] == priority || !priority) {
-      if (handleLocalCommand(hdr_in, (uint8_t *)hdr_in + hdr_size) < 0) {
-        buildError(EBADCOMMAND);
-        fillChecksum((uint8_t *)outgoingPacket);
-        downStream1.send(outgoingPacket, hdr_size + 4 + 1);
-      }
-    }
-  }
-}
-
-int handleLocalCommand(housekeeping_hdr_t *hdr, uint8_t *data) {
-  int retval;
-
-  if (hdr->len) {
-    if (retval = handleLocalWrite(hdr->cmd, data, hdr->len))
-      return retval;
-  } else {
-    // local read. by definition these always go downstream.
+int handleTestMode(uint8_t *data, uint8_t len)
+{
+  if (len == 2)
+  {
     housekeeping_hdr_t *respHdr = (housekeeping_hdr_t *)outgoingPacket;
     uint8_t *respData = outgoingPacket + hdr_size;
 
+    respHdr->dst = eSFC;
     respHdr->src = myID;
-    respHdr->dst = hdr->src;
+    respHdr->cmd = eTestMode;
+    respHdr->len = sizeof(uint16_t);
 
-    retval = handleLocalRead(hdr->cmd, respData);
+    uint16_t numTestPackets = (uint16_t) * (data + 1) << 8 | *(data);
+    uint32_t timelastpacket = millis();
 
-    if (retval >= 0) {
-      respHdr->cmd = hdr->cmd;
-      respHdr->len = (uint8_t)retval;
-    } else {
-      buildError(retval);
+    while (numTestPackets)
+    {
+      if (millis() - timelastpacket > TEST_MODE_PERIOD)
+      {
+        memcpy(respData, (uint8_t *)&numTestPackets, sizeof(numTestPackets));
+        fillChecksum(outgoingPacket);
+        downStream1.send(outgoingPacket, hdr_size + respHdr->len + 1);
+
+        numTestPackets--;
+        currentPacketCount++;
+        timelastpacket = millis();
+      }
     }
-
-    fillChecksum(outgoingPacket);
-    downStream1.send(outgoingPacket, hdr_size + respHdr->len + 1);
+    return sizeof(uint16_t);
   }
-  return 0;
+  else
+    return EBADLEN;
 }
 
+// got a priority request from destination dst
+void handlePriority(uint8_t priority)
+{
+  for (int i = FIRST_LOCAL_COMMAND; i < NUM_LOCAL_CONTROLS; i++)
+  {
+    hdr_in->cmd = i;
+    if (localControlPriorities[i] == priority || !priority)
+      handleLocalCommand(hdr_in, (uint8_t *)hdr_in + hdr_size);
+  }
+}
+
+/******************************************************************************
+ * Device specific functions
+ *****************************************************************************/
+int whatToDoIfMap(uint8_t *data)
+{
+  uint8_t num = 0;
+  /* Fill in data array with device list */
+  for (int i = 0; i < 7; i++)
+  {
+    for (int j = 0; j < 254; j++)
+    {
+      if (addressList[i][j] != 0)
+      {
+        *(data + num++) = j;
+      }
+    }
+  }
+  return num;
+}
+
+void checkAutoPriority()
+{
+  // this function should check if autopriority packets need to be sent and call functions to send those packets.
+  // CHECK ROLLOVER
+  // check low, med, and high
+  housekeeping_hdr_t fakeHdr;
+  fakeHdr.src = eSFC;
+  fakeHdr.dst = myID;
+  fakeHdr.len = 0;
+  hdr_in = &fakeHdr;
+
+  // HIGH
+  if (currentAutoPriorityPeriods.hiPriorityPeriod >= MIN_PERIOD)
+  {
+    if (long(millis() - nextHighPacket) > 0)
+    {
+      // function for sending low priority packets, acts as if it was sent by sfc as query for sending that priority packets.
+      handlePriority(eHiPriority);
+      nextHighPacket += currentAutoPriorityPeriods.hiPriorityPeriod;
+    }
+  }
+  // MEDIUM
+  if (currentAutoPriorityPeriods.medPriorityPeriod >= MIN_PERIOD)
+  {
+    if (long(millis() - nextMedPacket) > 0)
+    {
+      // function for sending low priority packets, acts as if it was sent by sfc as query for sending that priority packets.
+      handlePriority(eMedPriority);
+      nextMedPacket += currentAutoPriorityPeriods.medPriorityPeriod;
+    }
+  }
+  // LOW
+  if (currentAutoPriorityPeriods.lowPriorityPeriod >= MIN_PERIOD)
+  {
+    if (long(millis() - nextLowPacket) > 0)
+    {
+      // function for sending low priority packets, acts as if it was sent by sfc as query for sending that priority packets.
+      handlePriority(eLowPriority);
+      nextLowPacket += currentAutoPriorityPeriods.lowPriorityPeriod;
+    }
+  }
+}
 /******************************************************************************
  * Packet checking functions
  *****************************************************************************/
 
-/* Function flow:
- * --Forwards the packet towards the SFC
+/* --Forwards the packet towards the SFC
  *
  * Function params:
  * buffer:		The decoded packet received
  * len:			Size (in bytes) of the incoming packet above
- * sender:		PacketSerial instance (serial line) where the message
- * was received
+ * sender:		PacketSerial instance (serial line) where the message was received
  *
  */
-void forwardDown(const uint8_t *buffer, size_t len, const void *sender) {
+void forwardDown(const uint8_t *buffer, size_t len, const void *sender)
+{
   /* Continue to send the message */
   downStream1.send(buffer, len);
   checkDownBoundDst(sender);
 }
 
-/* Function flow:
- * --Checks if the intended destination is a device known to be attached
+/* --Checks if the intended destination is a device known to be attached
  *      --If it is known, send the packet down the correct serial line towards
  * that device
  *      --If it isn't, throw an error
@@ -268,14 +454,14 @@ void forwardDown(const uint8_t *buffer, size_t len, const void *sender) {
  * len:			Size (in bytes) of the incoming packet above
  *
  */
-void forwardUp(const uint8_t *buffer, size_t len) {
+void forwardUp(const uint8_t *buffer, size_t len)
+{
   int bus = checkUpBoundDst();
   if (bus)
     serialDevices[bus]->send(buffer, len);
 }
 
-/* Function flow:
- * --Checks to see if the downstream device that sent the message is known
+/* --Checks to see if the downstream device that sent the message is known
  *      --If not, add it to the list of known devices
  *      --If yes, just carry on
  * --Executed every time a packet is received from downStream
@@ -285,10 +471,14 @@ void forwardUp(const uint8_t *buffer, size_t len) {
  * was received
  *
  */
-void checkDownBoundDst(const void *sender) {
-  for (int i = 0; i < 7; i++) {
-    if (serialDevices[i] == (PacketSerial *)sender) {
-      if (addressList[i][hdr_in->src] == 0) {
+void checkDownBoundDst(const void *sender)
+{
+  for (int i = 0; i < 7; i++)
+  {
+    if (serialDevices[i] == (PacketSerial *)sender)
+    {
+      if (addressList[i][hdr_in->src] == 0)
+      {
         addressList[i][hdr_in->src] = (uint8_t)hdr_in->src;
         return;
       }
@@ -296,8 +486,7 @@ void checkDownBoundDst(const void *sender) {
   }
 }
 
-/* Function flow:
- * --Checks each serial line's list of devices for the intended destination of a
+/* --Checks each serial line's list of devices for the intended destination of a
  * packet
  * --If a line has that device known, a number corresonding to that serial line
  * is returned
@@ -305,9 +494,12 @@ void checkDownBoundDst(const void *sender) {
  * --If the device is not known, an error is thrown
  *
  */
-int checkUpBoundDst() {
-  for (int i = 0; i < 7; i++) {
-    if (addressList[i][hdr_in->dst] != 0) {
+int checkUpBoundDst()
+{
+  for (int i = 0; i < 7; i++)
+  {
+    if (addressList[i][hdr_in->dst] != 0)
+    {
       return i;
     }
   }
@@ -322,8 +514,7 @@ int checkUpBoundDst() {
   return 0;
 }
 
-/* Function flow:
- * --Find the device address that produced the error
+/* --Find the device address that produced the error
  * --Execute the bad length function & send the error to the SFC
  *
  * Function params:
@@ -331,10 +522,13 @@ int checkUpBoundDst() {
  *
  *
  * Send an error if a packet is unreadable in some way */
-void badPacketReceived(PacketSerial *sender) {
+void badPacketReceived(PacketSerial *sender)
+{
   int i = 0;
-  for (i = 0; i < 7; i++) {
-    if (sender == serialDevices[i]) {
+  for (i = 0; i < 7; i++)
+  {
+    if (sender == serialDevices[i])
+    {
       hdr_in->src = addressList[i][0];
       break;
     }
@@ -347,10 +541,11 @@ void badPacketReceived(PacketSerial *sender) {
 
   fillChecksum((uint8_t *)outgoingPacket);
   downStream1.send(outgoingPacket, hdr_size + 4 + 1);
-  // currentPacketCount++;
+  currentPacketCount++;
 }
 
-void buildError(int error) {
+void buildError(int error)
+{
   housekeeping_hdr_t *respHdr = (housekeeping_hdr_t *)outgoingPacket;
   housekeeping_err_t *err = (housekeeping_err_t *)(outgoingPacket + hdr_size);
   respHdr->dst = eSFC;
@@ -360,48 +555,4 @@ void buildError(int error) {
   err->dst = hdr_in->dst;
   err->cmd = hdr_in->cmd;
   err->error = error;
-}
-
-/******************************************************************************
- * System functions for all devices
- *****************************************************************************/
-
-void enterTestMode(uint8_t *data, uint8_t len) {
-  if (len == 2) {
-    housekeeping_hdr_t *respHdr = (housekeeping_hdr_t *)outgoingPacket;
-    uint8_t *respData = outgoingPacket + hdr_size;
-
-    respHdr->dst = eSFC;
-    respHdr->src = myID;
-    respHdr->cmd = eTestMode;
-    respHdr->len = 2;
-
-    uint16_t numTestPackets = (uint16_t) * (data + 1) << 8;
-    numTestPackets |= *(data);
-
-    while (numTestPackets) {
-      memcpy(respData, (uint8_t *)&numTestPackets, sizeof(numTestPackets));
-      fillChecksum(outgoingPacket);
-      downStream1.send(outgoingPacket, hdr_size + respHdr->len + 1);
-      numTestPackets--;
-    }
-  }
-}
-
-void setCommandPriority(housekeeping_prio_t *prio) {
-  localControlPriorities[prio->command] = prio->prio_type;
-
-  housekeeping_hdr_t *hdr = (housekeeping_hdr_t *)outgoingPacket;
-  hdr->dst = eSFC;
-  hdr->src = myID;
-  hdr->cmd = eSetPriority;
-  hdr->len = sizeof(housekeeping_prio_t);
-
-  housekeeping_prio_t *RespPrio =
-      (housekeeping_prio_t *)(outgoingPacket + hdr_size);
-  RespPrio->command = prio->command;
-  RespPrio->prio_type = prio->prio_type;
-
-  fillChecksum(outgoingPacket);
-  downStream1.send(outgoingPacket, hdr_size + hdr->len + 1);
 }

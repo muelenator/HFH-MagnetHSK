@@ -26,37 +26,48 @@ const byte temp2addr[10][8] = {
     {0x28, 0xB8, 0x94, 0x79, 0x97, 0x06, 0x03, 0x31}}; //#10
 
 //  OneWire  ds(10);  // on pin 10 (a 4.7K resistor is necessary)
-float tempSensorVal(int tempNum, int pinNum) {
+float tempSensorVal(int tempNum, int pinNum)
+{
   OneWire ds(pinNum);
   ds.reset_search();
   delay(250);
-  if (tempNum > 10 || tempNum < 1) {
+  if (tempNum > 10 || tempNum < 1)
+  {
     return -9999;
   }
   j = 0;
-  while (j < 100) {
+  while (j < 100)
+  {
     valid = true;
-    if (ds.search(addr)) {
-      for (int i = 0; i < 8; i++) {
-        if (addr[i] != temp2addr[tempNum - 1][i]) {
+    if (ds.search(addr))
+    {
+      for (int i = 0; i < 8; i++)
+      {
+        if (addr[i] != temp2addr[tempNum - 1][i])
+        {
           valid = false;
           break;
         }
       }
-      if (!valid) {
+      if (!valid)
+      {
         continue;
       }
       break;
-    } else { // Unable to find this address
+    }
+    else
+    { // Unable to find this address
       return -9999;
     }
     j++;
   }
-  if (j > 99) {
+  if (j > 99)
+  {
     return -9999;
   }
   // the first ROM byte indicates which chip
-  switch (addr[0]) {
+  switch (addr[0])
+  {
   case 0x10:
     type_s = 1;
     break;
@@ -76,18 +87,23 @@ float tempSensorVal(int tempNum, int pinNum) {
   delay(1000);       // maybe 750ms is enough, maybe not
   present = ds.reset();
   ds.select(addr);
-  ds.write(0xBE);           // Read Scratchpad
-  for (i = 0; i < 9; i++) { // we need 9 bytes
+  ds.write(0xBE); // Read Scratchpad
+  for (i = 0; i < 9; i++)
+  { // we need 9 bytes
     data[i] = ds.read();
   }
   int16_t raw = (data[1] << 8) | data[0];
-  if (type_s) {
+  if (type_s)
+  {
     raw = raw << 3; // 9 bit resolution default
-    if (data[7] == 0x10) {
+    if (data[7] == 0x10)
+    {
       // "count remain" gives full 12 bit resolution
       raw = (raw & 0xFFF0) + 12 - data[6];
     }
-  } else { // This is us
+  }
+  else
+  { // This is us
     byte cfg = (data[4] & 0x60);
     // at lower res, the low bits are undefined, so let's zero them
     if (cfg == 0x00)

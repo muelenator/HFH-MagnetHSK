@@ -1,6 +1,5 @@
 #pragma once
 
-// clang-format off
 #include <SPI.h> // include the SPI library
 #include "driverlib/sysctl.h"
 #include "driverlib/uart.h"
@@ -11,7 +10,7 @@
 
 #include "configConstants.h"
 //#include <chrono>
-// clang-format on
+
 // ******************************
 // SPI specific Support functions
 // ******************************

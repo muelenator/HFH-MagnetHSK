@@ -14,6 +14,8 @@
 #pragma once
 #include <stdint.h>
 
+#define MIN_PERIOD      100
+
 /*******************************************************************************
  * Typedef enums
  *******************************************************************************/
@@ -25,5 +27,13 @@ typedef enum MainHSK_cmd {
   eMapDevices = 3,
   eHeaterControl = 4,
   ePacketCount = 5,
-  eRandomTest = 6
+  eRandomTest = 6,
+  eAutoPriorityPeriod = 7
 } MainHSK_cmd;
+
+/* Autopriority period */
+typedef struct autoPriorityPeriods {
+  uint16_t lowPriorityPeriod; // auto low pri. period, in ms (0 disables, 100-655)
+  uint16_t medPriorityPeriod; // as above, for med pri.
+  uint16_t hiPriorityPeriod;  // as above, for hi pri.
+} autoPriorityPeriods_t;
